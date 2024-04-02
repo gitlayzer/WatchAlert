@@ -1,11 +1,8 @@
 package query
 
 import (
-	"crypto/md5"
-	"encoding/hex"
-	"encoding/json"
-	"sort"
 	"time"
+	"watchAlert/alert/queue"
 	"watchAlert/globals"
 	"watchAlert/models"
 	"watchAlert/utils/client"
@@ -18,90 +15,99 @@ type RuleQuery struct {
 
 func (rq *RuleQuery) Query(rule models.AlertRule) {
 
-	var recoverKeys []string
-
 	for _, dsId := range rule.DatasourceIdList {
-
-		var curKeys []string
 		switch rule.DatasourceType {
 		case "Prometheus":
-			curKeys = rq.prometheus(dsId, rule)
+			rq.prometheus(dsId, rule)
 		case "AliCloudSLS":
-			curKeys = rq.aliCloudSLS(dsId, rule)
+			rq.aliCloudSLS(dsId, rule)
 		case "Loki":
-			curKeys = rq.loki(dsId, rule)
+			rq.loki(dsId, rule)
 		}
-
-		// 处理恢复逻辑
-		firingKeys := getFiringAlertCacheKeys(rule, dsId)
-		recoverKeys = getSliceDifference(firingKeys, curKeys)
-		for _, key := range recoverKeys {
-			curTime := time.Now().Unix()
-			go func(key string, curTime int64) {
-				event := rq.alertEvent.GetCache(key)
-				if event.IsRecovered == true {
-					return
-				}
-				event.IsRecovered = true
-				event.RecoverTime = curTime
-				event.LastSendTime = 0
-				event.SetFiringCache(0)
-			}(key, curTime)
-		}
-
 	}
 
 }
 
+func (rq *RuleQuery) alertRecover(rule models.AlertRule, dsId string, curKeys []string) {
+	firingKeys := getFiringAlertCacheKeys(rule, dsId)
+	// 获取已恢复告警的keys
+	recoverKeys := getSliceDifference(firingKeys, curKeys)
+	if recoverKeys == nil {
+		return
+	}
+
+	curTime := time.Now().Unix()
+	for _, key := range recoverKeys {
+		event := rq.alertEvent.GetCache(key)
+		if event.IsRecovered == true {
+			return
+		}
+
+		if _, exists := queue.RecoverWaitMap[key]; !exists {
+			// 如果没有，则记录当前时间
+			queue.RecoverWaitMap[key] = curTime
+			continue
+		}
+
+		// 判断是否在等待时间范围内
+		rt := time.Unix(queue.RecoverWaitMap[key], 0).Add(time.Minute * time.Duration(globals.Config.Server.RecoverWait)).Unix()
+		if rt > curTime {
+			continue
+		}
+
+		event.IsRecovered = true
+		event.RecoverTime = curTime
+		event.LastSendTime = 0
+		event.SetFiringCache(0)
+
+		// 触发恢复删除带恢复中的 key
+		delete(queue.RecoverWaitMap, key)
+	}
+}
+
 // Prometheus 数据源
-func (rq *RuleQuery) prometheus(datasourceId string, rule models.AlertRule) []string {
+func (rq *RuleQuery) prometheus(datasourceId string, rule models.AlertRule) {
+	var curFiringKeys, curPendingKeys []string
+	defer func() {
+		go gcPendingCache(rule, datasourceId, curPendingKeys)
+		rq.alertRecover(rule, datasourceId, curFiringKeys)
+		go gcRecoverWaitCache(rule, curFiringKeys)
+	}()
 
 	resQuery, _, err := client.NewPromClient(datasourceId).Query(rule.PrometheusConfig.PromQL)
 	if err != nil {
-		return nil
+		return
 	}
 
-	var curFiringKeys, curPendingKeys []string
-
 	if resQuery == nil {
-		go gcPendingCache(rule, datasourceId, curPendingKeys)
-		return nil
+		return
 	}
 
 	for _, v := range resQuery {
-		fingerprint := v.Labels.FastFingerprint().String()
+		fingerprint := v.GetFingerprint()
 		firingKey := rq.alertEvent.FiringAlertCacheKey(rule.RuleId, datasourceId, fingerprint)
 		pendingKey := rq.alertEvent.PendingAlertCacheKey(rule.RuleId, datasourceId, fingerprint)
 		curFiringKeys = append(curFiringKeys, firingKey)
 		curPendingKeys = append(curPendingKeys, pendingKey)
 
-		// handle series tags
-		metricMap := make(map[string]interface{})
-		for label, value := range v.Labels {
-			metricMap[string(label)] = string(value)
-		}
-		metricMap["value"] = v.Value
-
-		metricArr := labelMapToArr(metricMap)
-		sort.Strings(metricArr)
-
 		event := parserDefaultEvent(rule)
 		event.DatasourceId = datasourceId
 		event.Fingerprint = fingerprint
-		event.Metric = metricMap
+		event.Metric = v.GetMetric()
 		event.Annotations = cmd.ParserVariables(rule.Annotations, event.Metric)
 
 		saveEventCache(event)
 	}
 
-	go gcPendingCache(rule, datasourceId, curPendingKeys)
-
-	return curFiringKeys
-
 }
 
 // AliCloudSLS 数据源
-func (rq *RuleQuery) aliCloudSLS(datasourceId string, rule models.AlertRule) []string {
+func (rq *RuleQuery) aliCloudSLS(datasourceId string, rule models.AlertRule) {
+	var curKeys []string
+	defer func() {
+		rq.alertRecover(rule, datasourceId, curKeys)
+		go gcRecoverWaitCache(rule, curKeys)
+	}()
 
 	curAt := time.Now()
 	startsAt := parserDuration(curAt, rule.AliCloudSLSConfig.LogScope, "m")
@@ -116,71 +122,54 @@ func (rq *RuleQuery) aliCloudSLS(datasourceId string, rule models.AlertRule) []s
 	res, err := client.NewAliCloudSlsClient(datasourceId).Query(args)
 	if err != nil {
 		globals.Logger.Sugar().Error("查询 AliCloudSls 日志失败 ->", err.Error())
-		return nil
+		return
 	}
 
 	count := len(res.Body)
 	if count <= 0 {
-		return nil
+		return
 	}
 
-	bodyString, _ := json.Marshal(res.Body[0])
-	// 标签，用于推送告警消息时 获取相关 label 信息
-	metricMap := make(map[string]interface{})
-	err = json.Unmarshal(bodyString, &metricMap)
-	if err != nil {
-		globals.Logger.Sugar().Errorf("解析 SLS Metric Label 失败, %s", err.Error())
+	bodyList := client.GetSLSBodyData(res)
+
+	for _, body := range bodyList.MetricList {
+		fingerprint := body.GetFingerprint()
+		key := rq.alertEvent.FiringAlertCacheKey(rule.RuleId, datasourceId, fingerprint)
+		curKeys = append(curKeys, key)
+
+		event := func() {
+			event := parserDefaultEvent(rule)
+			event.DatasourceId = datasourceId
+			event.Fingerprint = fingerprint
+			event.Annotations = body.GetAnnotations()
+			event.Metric = body.GetMetric()
+
+			saveEventCache(event)
+		}
+
+		options := models.EvalCondition{
+			/*
+				触发告警的条件
+				- 有数据 > number	// 有数据并大于多少条。
+			*/
+			Type:     rule.AliCloudSLSConfig.EvalCondition.Type,
+			Operator: rule.AliCloudSLSConfig.EvalCondition.Operator,
+			Value:    rule.AliCloudSLSConfig.EvalCondition.Value,
+		}
+
+		// 评估告警条件
+		evalCondition(event, count, options)
 	}
-
-	// 删除多余 label
-	delete(metricMap, "_image_name_")
-	delete(metricMap, "__topic__")
-	delete(metricMap, "_container_ip_")
-	delete(metricMap, "_pod_uid_")
-	delete(metricMap, "_source_")
-	delete(metricMap, "_time_")
-	delete(metricMap, "__time__")
-	delete(metricMap, "__tag__:__pack_id__")
-	annotation := metricMap["content"].(string)
-	delete(metricMap, "content")
-
-	var curKeys []string
-	h := md5.New()
-	// 使用 label 进行 Hash 作为告警指纹，可以有效地作为恢复逻辑的判断条件。
-	h.Write([]byte(cmd.JsonMarshal(metricMap)))
-	fingerprint := hex.EncodeToString(h.Sum(nil))
-	key := rq.alertEvent.FiringAlertCacheKey(rule.RuleId, datasourceId, fingerprint)
-	curKeys = append(curKeys, key)
-
-	event := func() {
-		event := parserDefaultEvent(rule)
-		event.DatasourceId = datasourceId
-		event.Fingerprint = fingerprint
-		event.Annotations = annotation
-		event.Metric = metricMap
-
-		saveEventCache(event)
-	}
-
-	options := models.EvalCondition{
-		/*
-			触发告警的条件
-			- 有数据 > number	// 有数据并大于多少条。
-		*/
-		Type:     rule.AliCloudSLSConfig.EvalCondition.Type,
-		Operator: rule.AliCloudSLSConfig.EvalCondition.Operator,
-		Value:    rule.AliCloudSLSConfig.EvalCondition.Value,
-	}
-
-	// 评估告警条件
-	evalCondition(event, count, options)
-
-	return curKeys
 
 }
 
 // Loki 数据源
-func (rq *RuleQuery) loki(datasourceId string, rule models.AlertRule) []string {
+func (rq *RuleQuery) loki(datasourceId string, rule models.AlertRule) {
+	var curKeys []string
+	defer func() {
+		rq.alertRecover(rule, datasourceId, curKeys)
+		go gcRecoverWaitCache(rule, curKeys)
+	}()
 
 	curAt := time.Now().UTC()
 	startsAt := parserDuration(curAt, rule.LokiConfig.LogScope, "m")
@@ -193,10 +182,8 @@ func (rq *RuleQuery) loki(datasourceId string, rule models.AlertRule) []string {
 	res, err := client.NewLokiClient(datasourceId).QueryRange(args)
 	if err != nil {
 		globals.Logger.Sugar().Errorf("查询 Loki 日志失败 %s", err.Error())
-		return nil
+		return
 	}
-
-	var curKeys []string
 
 	for _, v := range res {
 
@@ -205,30 +192,17 @@ func (rq *RuleQuery) loki(datasourceId string, rule models.AlertRule) []string {
 			continue
 		}
 
-		// 使用 Loki 提供的 Stream label 进行 Hash 作为告警指纹.
-		h := md5.New()
-		streamString := cmd.JsonMarshal(v.Stream)
-		h.Write([]byte(streamString))
-		fingerprint := hex.EncodeToString(h.Sum(nil))
+		fingerprint := v.GetFingerprint()
 		key := rq.alertEvent.FiringAlertCacheKey(rule.RuleId, datasourceId, fingerprint)
 		curKeys = append(curKeys, key)
-
-		// 标签，用于推送告警消息时 获取相关 label 信息
-		metricMap := make(map[string]interface{})
-		for label, value := range v.Stream {
-			metricMap[label] = value
-		}
-
-		delete(metricMap, "stream")
-		delete(metricMap, "filename")
 
 		event := func() {
 			event := parserDefaultEvent(rule)
 			event.DatasourceId = datasourceId
 			event.Fingerprint = fingerprint
-			bodyString, _ := json.Marshal(v.Values)
-			event.Metric = metricMap
-			event.Annotations = string(bodyString)
+			event.Metric = v.GetMetric()
+			event.Annotations = v.GetAnnotations().(string)
+
 			saveEventCache(event)
 		}
 
@@ -242,7 +216,5 @@ func (rq *RuleQuery) loki(datasourceId string, rule models.AlertRule) []string {
 		evalCondition(event, count, options)
 
 	}
-
-	return curKeys
 
 }

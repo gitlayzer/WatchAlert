@@ -1,11 +1,14 @@
 package client
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"watchAlert/globals"
 	"watchAlert/models"
+	"watchAlert/utils/cmd"
 	"watchAlert/utils/http"
 
 	"strconv"
@@ -94,4 +97,40 @@ func (lc LokiClient) QueryRange(options QueryOptions) ([]Result, error) {
 
 	return resultData.Data.Result, nil
 
+}
+
+func (r Result) GetFingerprint() string {
+	// 使用 Loki 提供的 Stream label 进行 Hash 作为告警指纹.
+	newMetric := map[string]interface{}{
+		"namespace": r.Stream["namespace"],
+		"container": r.Stream["container"],
+	}
+	h := md5.New()
+	streamString := cmd.JsonMarshal(newMetric)
+	h.Write([]byte(streamString))
+	fingerprint := hex.EncodeToString(h.Sum(nil))
+	return fingerprint
+}
+
+func (r Result) GetMetric() map[string]interface{} {
+	// 标签，用于推送告警消息时 获取相关 label 信息
+	metricMap := make(map[string]interface{})
+	for label, value := range r.Stream {
+		metricMap[label] = value
+	}
+
+	delete(metricMap, "stream")
+	delete(metricMap, "filename")
+	return metricMap
+}
+
+func (r Result) GetAnnotations() interface{} {
+	var logValue, annotations string
+	if r.Values[0] != nil {
+		if r.Values[0].([]interface{}) != nil {
+			logValue = r.Values[0].([]interface{})[1].(string)
+		}
+	}
+	annotations = cmd.FormatJson(logValue)
+	return annotations
 }

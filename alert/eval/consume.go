@@ -1,7 +1,6 @@
 package eval
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -141,7 +140,12 @@ func (ec *EvalConsume) filterAlerts(alerts []models.AlertCurEvent) map[string][]
 	// 将通过指纹去重后以Fingerprint为Key的Map转换成以原来RuleName为Key的Map (同一告警类型聚合)
 	for _, alert := range newAlert {
 		// 重复通知，如果是初次推送不用进一步判断。
-		if alert.LastSendTime == 0 || alert.LastEvalTime >= alert.LastSendTime+alert.RepeatNoticeInterval*60 {
+		if !alert.IsRecovered {
+			if alert.LastSendTime == 0 || alert.LastEvalTime >= alert.LastSendTime+alert.RepeatNoticeInterval*60 {
+				newAlertsMap[alert.RuleName] = append(newAlertsMap[alert.RuleName], alert)
+			}
+		}
+		if alert.IsRecovered {
 			newAlertsMap[alert.RuleName] = append(newAlertsMap[alert.RuleName], alert)
 		}
 	}
@@ -344,7 +348,6 @@ func (ec *EvalConsume) getNoticeGroupId(alert models.AlertCurEvent) string {
 // RecordAlertHisEvent 记录历史告警
 func (ec *EvalConsume) RecordAlertHisEvent(alert models.AlertCurEvent) error {
 
-	metric, _ := json.Marshal(alert.Metric)
 	hisData := models.AlertHisEvent{
 		DatasourceType:   alert.DatasourceType,
 		DatasourceId:     alert.DatasourceId,
@@ -352,7 +355,7 @@ func (ec *EvalConsume) RecordAlertHisEvent(alert models.AlertCurEvent) error {
 		RuleId:           alert.RuleId,
 		RuleName:         alert.RuleName,
 		Severity:         alert.Severity,
-		Metric:           string(metric),
+		Metric:           alert.Metric,
 		EvalInterval:     alert.EvalInterval,
 		Annotations:      alert.Annotations,
 		IsRecovered:      true,
