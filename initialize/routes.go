@@ -2,20 +2,30 @@ package initialize
 
 import (
 	"github.com/gin-gonic/gin"
-	"watchAlert/globals"
-	"watchAlert/middleware/cors"
+	"watchAlert/middleware"
+	"watchAlert/public/globals"
 	"watchAlert/routers"
 	"watchAlert/routers/v1"
 )
 
 func InitRoute() {
-
 	globals.Logger.Sugar().Info("服务启动")
+	ginEngine := gin.New()
 
-	ginEngine := gin.Default()
+	var mode string
+	if globals.Config.Server.Mode != "" {
+		mode = globals.Config.Server.Mode
+	} else {
+		mode = "debug"
+	}
 
-	// 启用CORS中间件
-	ginEngine.Use(cors.Cors())
+	gin.SetMode(mode)
+	ginEngine.Use(
+		// 启用CORS中间件
+		middleware.Cors(),
+		// 自定义请求日志格式
+		gin.LoggerWithFormatter(middleware.RequestLoggerFormatter),
+	)
 	allRouter(ginEngine)
 
 	err := ginEngine.Run(":" + globals.Config.Server.Port)

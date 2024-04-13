@@ -2,8 +2,8 @@ package mute
 
 import (
 	"watchAlert/controllers/repo"
-	"watchAlert/globals"
 	"watchAlert/models"
+	"watchAlert/public/globals"
 )
 
 func IsMuted(alert *models.AlertCurEvent) bool {
@@ -19,7 +19,7 @@ func IsMuted(alert *models.AlertCurEvent) bool {
 		if ttl < 0 {
 			repo.DBCli.Delete(repo.Delete{
 				Table: models.AlertSilences{},
-				Where: []string{"fingerprint = ?", alert.Fingerprint},
+				Where: []interface{}{"fingerprint = ?", alert.Fingerprint},
 			})
 		}
 	}

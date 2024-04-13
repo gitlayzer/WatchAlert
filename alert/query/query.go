@@ -3,10 +3,10 @@ package query
 import (
 	"time"
 	"watchAlert/alert/queue"
-	"watchAlert/globals"
 	"watchAlert/models"
-	"watchAlert/utils/client"
-	"watchAlert/utils/cmd"
+	client2 "watchAlert/public/client"
+	"watchAlert/public/globals"
+	"watchAlert/public/utils/cmd"
 )
 
 type RuleQuery struct {
@@ -29,7 +29,7 @@ func (rq *RuleQuery) Query(rule models.AlertRule) {
 }
 
 func (rq *RuleQuery) alertRecover(rule models.AlertRule, dsId string, curKeys []string) {
-	firingKeys := getFiringAlertCacheKeys(rule, dsId)
+	firingKeys := rule.GetFiringAlertCacheKeys()
 	// 获取已恢复告警的keys
 	recoverKeys := getSliceDifference(firingKeys, curKeys)
 	if recoverKeys == nil {
@@ -74,7 +74,7 @@ func (rq *RuleQuery) prometheus(datasourceId string, rule models.AlertRule) {
 		go gcRecoverWaitCache(rule, curFiringKeys)
 	}()
 
-	resQuery, _, err := client.NewPromClient(datasourceId).Query(rule.PrometheusConfig.PromQL)
+	resQuery, _, err := client2.NewPromClient(rule.TenantId, datasourceId).Query(rule.PrometheusConfig.PromQL)
 	if err != nil {
 		return
 	}
@@ -84,17 +84,16 @@ func (rq *RuleQuery) prometheus(datasourceId string, rule models.AlertRule) {
 	}
 
 	for _, v := range resQuery {
-		fingerprint := v.GetFingerprint()
-		firingKey := rq.alertEvent.FiringAlertCacheKey(rule.RuleId, datasourceId, fingerprint)
-		pendingKey := rq.alertEvent.PendingAlertCacheKey(rule.RuleId, datasourceId, fingerprint)
-		curFiringKeys = append(curFiringKeys, firingKey)
-		curPendingKeys = append(curPendingKeys, pendingKey)
-
 		event := parserDefaultEvent(rule)
 		event.DatasourceId = datasourceId
-		event.Fingerprint = fingerprint
+		event.Fingerprint = v.GetFingerprint()
 		event.Metric = v.GetMetric()
 		event.Annotations = cmd.ParserVariables(rule.Annotations, event.Metric)
+
+		firingKey := event.GetFiringAlertCacheKey()
+		pendingKey := event.GetPendingAlertCacheKey()
+		curFiringKeys = append(curFiringKeys, firingKey)
+		curPendingKeys = append(curPendingKeys, pendingKey)
 
 		saveEventCache(event)
 	}
@@ -111,7 +110,7 @@ func (rq *RuleQuery) aliCloudSLS(datasourceId string, rule models.AlertRule) {
 
 	curAt := time.Now()
 	startsAt := parserDuration(curAt, rule.AliCloudSLSConfig.LogScope, "m")
-	args := client.AliCloudSlsQueryArgs{
+	args := client2.AliCloudSlsQueryArgs{
 		Project:  rule.AliCloudSLSConfig.Project,
 		Logstore: rule.AliCloudSLSConfig.Logstore,
 		StartsAt: int32(startsAt.Unix()),
@@ -119,7 +118,7 @@ func (rq *RuleQuery) aliCloudSLS(datasourceId string, rule models.AlertRule) {
 		Query:    rule.AliCloudSLSConfig.LogQL,
 	}
 
-	res, err := client.NewAliCloudSlsClient(datasourceId).Query(args)
+	res, err := client2.NewAliCloudSlsClient(rule.TenantId, datasourceId).Query(args)
 	if err != nil {
 		globals.Logger.Sugar().Error("查询 AliCloudSls 日志失败 ->", err.Error())
 		return
@@ -130,19 +129,19 @@ func (rq *RuleQuery) aliCloudSLS(datasourceId string, rule models.AlertRule) {
 		return
 	}
 
-	bodyList := client.GetSLSBodyData(res)
+	bodyList := client2.GetSLSBodyData(res)
 
 	for _, body := range bodyList.MetricList {
-		fingerprint := body.GetFingerprint()
-		key := rq.alertEvent.FiringAlertCacheKey(rule.RuleId, datasourceId, fingerprint)
-		curKeys = append(curKeys, key)
 
 		event := func() {
 			event := parserDefaultEvent(rule)
 			event.DatasourceId = datasourceId
-			event.Fingerprint = fingerprint
+			event.Fingerprint = body.GetFingerprint()
 			event.Annotations = body.GetAnnotations()
 			event.Metric = body.GetMetric()
+
+			key := event.GetFiringAlertCacheKey()
+			curKeys = append(curKeys, key)
 
 			saveEventCache(event)
 		}
@@ -173,13 +172,13 @@ func (rq *RuleQuery) loki(datasourceId string, rule models.AlertRule) {
 
 	curAt := time.Now().UTC()
 	startsAt := parserDuration(curAt, rule.LokiConfig.LogScope, "m")
-	args := client.QueryOptions{
+	args := client2.QueryOptions{
 		Query:   rule.LokiConfig.LogQL,
 		StartAt: startsAt.Format(time.RFC3339Nano),
 		EndAt:   curAt.Format(time.RFC3339Nano),
 	}
 
-	res, err := client.NewLokiClient(datasourceId).QueryRange(args)
+	res, err := client2.NewLokiClient(rule.TenantId, datasourceId).QueryRange(args)
 	if err != nil {
 		globals.Logger.Sugar().Errorf("查询 Loki 日志失败 %s", err.Error())
 		return
@@ -192,16 +191,15 @@ func (rq *RuleQuery) loki(datasourceId string, rule models.AlertRule) {
 			continue
 		}
 
-		fingerprint := v.GetFingerprint()
-		key := rq.alertEvent.FiringAlertCacheKey(rule.RuleId, datasourceId, fingerprint)
-		curKeys = append(curKeys, key)
-
 		event := func() {
 			event := parserDefaultEvent(rule)
 			event.DatasourceId = datasourceId
-			event.Fingerprint = fingerprint
+			event.Fingerprint = v.GetFingerprint()
 			event.Metric = v.GetMetric()
 			event.Annotations = v.GetAnnotations().(string)
+
+			key := event.GetPendingAlertCacheKey()
+			curKeys = append(curKeys, key)
 
 			saveEventCache(event)
 		}
