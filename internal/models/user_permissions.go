@@ -117,7 +117,7 @@ func PermissionsInfo() map[string]UserPermissions {
 		},
 		"noticeSearch": {
 			Key: "搜索通知对象",
-			API: "/api/w8t/sender/noticeSearch",
+			API: "/api/w8t/notice/noticeSearch",
 		},
 		"noticeTemplateCreate": {
 			Key: "创建通知模版",
@@ -137,7 +137,7 @@ func PermissionsInfo() map[string]UserPermissions {
 		},
 		"noticeUpdate": {
 			Key: "更新通知对象",
-			API: "/api/w8t/sender/noticeUpdate",
+			API: "/api/w8t/notice/noticeUpdate",
 		},
 		"permsList": {
 			Key: "查看用户权限",
@@ -278,6 +278,14 @@ func PermissionsInfo() map[string]UserPermissions {
 		"searchNoticeTmpl": {
 			Key: "搜索通知模版",
 			API: "/api/w8t/noticeTemplate/searchNoticeTmpl",
+		},
+		"settingSave": {
+			Key: "编辑系统配置",
+			API: "/api/w8t/setting/saveSystemSetting",
+		},
+		"settingGet": {
+			Key: "获取系统配置",
+			API: "/api/w8t/setting/getSystemSetting",
 		},
 	}
 }
