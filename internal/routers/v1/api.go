@@ -41,6 +41,8 @@ func Router(engine *gin.Engine) {
 			AWSCloudWatch.API(w8t)
 			AWSRds.API(w8t)
 			Setting.API(w8t)
+			KubeEvent.API(w8t)
+			Monitor.API(w8t)
 		}
 
 	}

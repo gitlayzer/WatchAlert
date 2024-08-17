@@ -2,6 +2,8 @@ package models
 
 import (
 	"sort"
+	"watchAlert/internal/types"
+	//"watchAlert/pkg/client"
 	"watchAlert/pkg/utils/hash"
 )
 
@@ -41,9 +43,28 @@ type AlertRule struct {
 	// AWS CloudWatch
 	CloudWatchConfig CloudWatchConfig `json:"cloudwatchConfig" gorm:"cloudwatchConfig;serializer:json"`
 
-	NoticeId    string      `json:"noticeId"`
-	NoticeGroup NoticeGroup `json:"noticeGroup" gorm:"noticeGroup;serializer:json"`
-	Enabled     *bool       `json:"enabled" gorm:"enabled"`
+	KubernetesConfig KubernetesConfig `json:"kubernetesConfig" gorm:"kubernetesConfig;serializer:json"`
+
+	ElasticSearchConfig ElasticSearchConfig `json:"elasticSearchConfig" gorm:"elasticSearchConfig;serializer:json"`
+
+	NoticeId      string      `json:"noticeId"`
+	NoticeGroup   NoticeGroup `json:"noticeGroup" gorm:"noticeGroup;serializer:json"`
+	RecoverNotify *bool       `json:"recoverNotify"`
+	Enabled       *bool       `json:"enabled" gorm:"enabled"`
+}
+
+type ElasticSearchConfig struct {
+	Index  string                `json:"index"`
+	Scope  int64                 `json:"scope"`
+	Filter []types.ESQueryFilter `json:"filter"`
+}
+
+type KubernetesConfig struct {
+	Resource string   `json:"resource"`
+	Reason   string   `json:"reason"`
+	Value    int      `json:"value"`
+	Filter   []string `json:"filter"`
+	Scope    int      `json:"scope"`
 }
 
 type JaegerConfig struct {

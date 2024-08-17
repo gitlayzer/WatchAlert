@@ -29,6 +29,8 @@ var (
 	AWSCloudWatchService    service2.InterAwsCloudWatchService
 	AWSCloudWatchRdsService service2.InterAwsRdsService
 	SettingService          InterSettingService
+	ClientService           InterClientService
+	MonitorService          InterMonitorService
 )
 
 func NewServices(ctx *ctx.Context) {
@@ -54,4 +56,6 @@ func NewServices(ctx *ctx.Context) {
 	AWSCloudWatchService = service2.NewInterAwsCloudWatchService(ctx)
 	AWSCloudWatchRdsService = service2.NewInterAWSRdsService(ctx)
 	SettingService = newInterSettingService(ctx)
+	ClientService = newInterClientService(ctx)
+	MonitorService = newInterMonitorService(ctx)
 }

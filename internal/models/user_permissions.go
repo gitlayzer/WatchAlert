@@ -291,5 +291,53 @@ func PermissionsInfo() map[string]UserPermissions {
 			Key: "Prometheus指标查询",
 			API: "/api/w8t/datasource/promQuery",
 		},
+		"getTenant": {
+			Key: "获取租户详细信息",
+			API: "/api/w8t/tenant/getTenant",
+		},
+		"addUsersToTenant": {
+			Key: "向租户添加成员",
+			API: "/api/w8t/tenant/addUsersToTenant",
+		},
+		"delUsersOfTenant": {
+			Key: "删除租户成员",
+			API: "/api/w8t/tenant/delUsersOfTenant",
+		},
+		"getUsersForTenant": {
+			Key: "获取租户成员列表",
+			API: "/api/w8t/tenant/getUsersForTenant",
+		},
+		"changeTenantUserRole": {
+			Key: "修改租户成员角色",
+			API: "/api/w8t/tenant/changeTenantUserRole",
+		},
+		"getResourceList": {
+			Key: "获取Kubernetes资源列表",
+			API: "/api/w8t/kubernetes/getResourceList",
+		},
+		"getReasonList": {
+			Key: "获取Kubernetes事件类型列表",
+			API: "/api/w8t/kubernetes/getReasonList",
+		},
+		"createMon": {
+			Key: "创建证书监控",
+			API: "/api/w8t/monitor/createMon",
+		},
+		"updateMon": {
+			Key: "更新证书监控",
+			API: "/api/w8t/monitor/updateMon",
+		},
+		"deleteMon": {
+			Key: "删除证书监控",
+			API: "/api/w8t/monitor/deleteMon",
+		},
+		"listMon": {
+			Key: "获取证书监控列表",
+			API: "/api/w8t/monitor/listMon",
+		},
+		"getMon": {
+			Key: "获取证书监控信息",
+			API: "/api/w8t/monitor/getMon",
+		},
 	}
 }

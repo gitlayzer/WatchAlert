@@ -67,7 +67,13 @@ func (ur UserRepo) List() ([]models.Member, error) {
 func (ur UserRepo) Get(r models.MemberQuery) (models.Member, bool, error) {
 	var data models.Member
 	db := ur.db.Model(models.Member{})
-	db.Where("user_name = ?", r.UserName)
+	if r.UserId != "" {
+		db.Where("user_id = ?", r.UserId)
+	}
+
+	if r.UserName != "" {
+		db.Where("user_name = ?", r.UserName)
+	}
 	err := db.First(&data).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -83,6 +89,17 @@ func (ur UserRepo) Create(r models.Member) error {
 	err := ur.g.Create(models.Member{}, r)
 	if err != nil {
 		return err
+	}
+
+	if r.UserId == "admin" {
+		r.Tenants = append(r.Tenants, "default")
+		err = ur.g.Updates(Updates{
+			Table: models.Member{},
+			Where: map[string]interface{}{
+				"user_id = ?": r.UserId,
+			},
+			Updates: r,
+		})
 	}
 
 	return nil
@@ -106,14 +123,25 @@ func (ur UserRepo) Update(r models.Member) error {
 }
 
 func (ur UserRepo) Delete(r models.MemberQuery) error {
+	userInfo, _, err := ur.User().Get(models.MemberQuery{UserId: r.UserId})
+	if err != nil {
+		return err
+	}
+
+	for _, tid := range userInfo.Tenants {
+		err = ur.Tenant().RemoveTenantLinkedUsers(models.TenantQuery{ID: tid, UserID: r.UserId})
+		if err != nil {
+			return err
+		}
+	}
+
 	d := Delete{
 		Table: models.Member{},
 		Where: map[string]interface{}{
 			"user_id = ?": r.UserId,
 		},
 	}
-
-	err := ur.g.Delete(d)
+	err = ur.g.Delete(d)
 	if err != nil {
 		return err
 	}

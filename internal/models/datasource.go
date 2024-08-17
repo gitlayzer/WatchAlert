@@ -16,7 +16,15 @@ type AlertDataSource struct {
 	AliCloudSk       string        `json:"alicloudSk"`
 	AWSCloudWatch    AWSCloudWatch `json:"awsCloudwatch" gorm:"awsCloudwatch;serializer:json"`
 	Description      string        `json:"description"`
+	KubeConfig       string        `json:"kubeConfig"`
+	ElasticSearch    ElasticSearch `json:"elasticSearch" gorm:"elasticSearch;serializer:json"`
 	Enabled          *bool         `json:"enabled" `
+}
+
+type ElasticSearch struct {
+	Url      string `json:"url"`
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 type HTTP struct {
@@ -54,6 +62,11 @@ func (ds AlertDataSource) CheckHealth() (bool, error) {
 		return true, nil
 	case "CloudWatch":
 		return true, nil
+	case "Kubernetes":
+		return true, nil
+	case "ElasticSearch":
+		url = ds.ElasticSearch.Url
+		fullPath = "/_cat/health"
 	}
 
 	res, err := utilsHttp.Get(url + fullPath)
