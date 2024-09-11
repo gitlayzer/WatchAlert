@@ -2,7 +2,6 @@ package models
 
 import (
 	"sort"
-	"watchAlert/internal/types"
 	//"watchAlert/pkg/client"
 	"watchAlert/pkg/utils/hash"
 )
@@ -47,16 +46,22 @@ type AlertRule struct {
 
 	ElasticSearchConfig ElasticSearchConfig `json:"elasticSearchConfig" gorm:"elasticSearchConfig;serializer:json"`
 
-	NoticeId      string      `json:"noticeId"`
-	NoticeGroup   NoticeGroup `json:"noticeGroup" gorm:"noticeGroup;serializer:json"`
-	RecoverNotify *bool       `json:"recoverNotify"`
-	Enabled       *bool       `json:"enabled" gorm:"enabled"`
+	NoticeId         string      `json:"noticeId"`
+	NoticeGroup      NoticeGroup `json:"noticeGroup" gorm:"noticeGroup;serializer:json"`
+	RecoverNotify    *bool       `json:"recoverNotify"`
+	AlarmAggregation *bool       `json:"alarmAggregation"`
+	Enabled          *bool       `json:"enabled" gorm:"enabled"`
 }
 
 type ElasticSearchConfig struct {
-	Index  string                `json:"index"`
-	Scope  int64                 `json:"scope"`
-	Filter []types.ESQueryFilter `json:"filter"`
+	Index  string          `json:"index"`
+	Scope  int64           `json:"scope"`
+	Filter []EsQueryFilter `json:"filter"`
+}
+
+type EsQueryFilter struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
 }
 
 type KubernetesConfig struct {

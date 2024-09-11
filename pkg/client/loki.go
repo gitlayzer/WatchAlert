@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"strconv"
-	"strings"
 	"time"
 	"watchAlert/internal/models"
 	"watchAlert/pkg/utils/cmd"
@@ -44,12 +44,12 @@ type Result struct {
 	Values []interface{}     `json:"values"`
 }
 
-func (lc LokiClient) QueryRange(options QueryOptions) ([]Result, error) {
+func (lc LokiClient) QueryRange(options QueryOptions) ([]Result, int, error) {
 
 	curTime := time.Now()
 
 	if options.Query == "" {
-		return nil, nil
+		return nil, 0, nil
 	}
 
 	if options.Direction == "" {
@@ -69,27 +69,27 @@ func (lc LokiClient) QueryRange(options QueryOptions) ([]Result, error) {
 		options.EndAt = curTime.Format(time.RFC3339Nano)
 	}
 
-	args := fmt.Sprintf("/loki/api/v1/query_range?query=%s&direction=%s&limit=%d&start=%s&end=%s", options.Query, options.Direction, options.Limit, options.StartAt, options.EndAt)
+	args := fmt.Sprintf("/loki/api/v1/query_range?query=%s&direction=%s&limit=%d&start=%s&end=%s", url.QueryEscape(options.Query), options.Direction, options.Limit, options.StartAt, options.EndAt)
 	requestURL := lc.BaseURL + args
-	requestURL = strings.ReplaceAll(requestURL, "{", "%7B")
-	requestURL = strings.ReplaceAll(requestURL, "}", "%7D")
-	requestURL = strings.ReplaceAll(requestURL, `"`, "%22")
-	requestURL = strings.ReplaceAll(requestURL, " ", "%20")
-
-	res, err := http.Get(requestURL)
+	res, err := http.Get(nil, requestURL)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	body, _ := io.ReadAll(res.Body)
 	var resultData result
 	err = json.Unmarshal(body, &resultData)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return resultData.Data.Result, nil
+	// count 用于统计日志条数
+	var count int
+	for _, v := range resultData.Data.Result {
+		count += len(v.Values)
+	}
 
+	return resultData.Data.Result, count, nil
 }
 
 func (r Result) GetFingerprint() string {

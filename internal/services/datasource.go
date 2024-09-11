@@ -1,8 +1,10 @@
 package services
 
 import (
+	"errors"
 	"watchAlert/internal/models"
 	"watchAlert/pkg/ctx"
+	"watchAlert/pkg/provider"
 )
 
 type datasourceService struct {
@@ -26,12 +28,12 @@ func newInterDatasourceService(ctx *ctx.Context) InterDatasourceService {
 
 func (ds datasourceService) Create(req interface{}) (interface{}, interface{}) {
 	dataSource := req.(*models.AlertDataSource)
-	ok, err := dataSource.CheckHealth()
-	if !ok {
-		return nil, err
+	health := provider.CheckDatasourceHealth(*dataSource)
+	if !health {
+		return nil, errors.New("数据源目标不可达!")
 	}
 
-	err = ds.ctx.DB.Datasource().Create(*dataSource)
+	err := ds.ctx.DB.Datasource().Create(*dataSource)
 	if err != nil {
 		return nil, err
 	}
@@ -41,6 +43,11 @@ func (ds datasourceService) Create(req interface{}) (interface{}, interface{}) {
 
 func (ds datasourceService) Update(req interface{}) (interface{}, interface{}) {
 	dataSource := req.(*models.AlertDataSource)
+	health := provider.CheckDatasourceHealth(*dataSource)
+	if !health {
+		return nil, errors.New("数据源目标不可达!")
+	}
+
 	err := ds.ctx.DB.Datasource().Update(*dataSource)
 	if err != nil {
 		return nil, err
