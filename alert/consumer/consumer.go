@@ -2,16 +2,20 @@ package consumer
 
 import (
 	"fmt"
-	"golang.org/x/sync/errgroup"
+	"github.com/zeromicro/go-zero/core/logc"
 	"strings"
 	"sync"
 	"time"
+	"watchAlert/alert/mute"
 	"watchAlert/alert/process"
-	"watchAlert/alert/sender"
 	"watchAlert/internal/global"
 	"watchAlert/internal/models"
 	"watchAlert/pkg/ctx"
-	"watchAlert/pkg/utils/hash"
+	"watchAlert/pkg/sender"
+	"watchAlert/pkg/templates"
+	"watchAlert/pkg/tools"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type Consume struct {
@@ -40,10 +44,12 @@ func NewInterEvalConsumeWork(ctx *ctx.Context) InterEvalConsume {
 
 // Run 启动告警消费进程
 func (ec *Consume) Run() {
+	taskChan := make(chan struct{}, 1)
 	go func() {
 		for {
+			taskChan <- struct{}{}
 			ec.processAlerts()
-			time.Sleep(time.Second)
+			<-taskChan
 		}
 	}()
 }
@@ -138,7 +144,7 @@ func (ec *Consume) fireAlertEvent(alertsMap map[string][]models.AlertCurEvent) {
 				ec.removeAlertFromCache(alert)
 				err := process.RecordAlertHisEvent(ec.ctx, alert)
 				if err != nil {
-					global.Logger.Sugar().Error(err.Error())
+					logc.Error(ec.ctx.Ctx, err.Error())
 					return
 				}
 			}
@@ -215,7 +221,7 @@ func (ec *Consume) addAlertToGroupByRuleId(alert models.AlertCurEvent) {
 
 // hash
 func (ec *Consume) calculateGroupHash(key, value string) string {
-	return hash.Md5Hash([]byte(key + ":" + value))
+	return tools.Md5Hash([]byte(key + ":" + value))
 }
 
 // GotoSendAlert 推送告警
@@ -257,7 +263,7 @@ func (ec *Consume) handleSubscribe(alerts []models.AlertCurEvent) {
 	}
 
 	if err := g.Wait(); err != nil {
-		global.Logger.Sugar().Error(err.Error())
+		logc.Error(ec.ctx.Ctx, err.Error())
 	}
 }
 
@@ -283,9 +289,33 @@ func (ec *Consume) handleAlert(rule models.AlertRule, alerts []models.AlertCurEv
 
 		noticeData, _ := ec.ctx.DB.Notice().Get(r)
 		alert.DutyUser = process.GetDutyUser(ec.ctx, noticeData)
-		err := sender.Sender(ec.ctx, alert, noticeData)
+
+		mp := mute.MuteParams{
+			EffectiveTime: alert.EffectiveTime,
+			RecoverNotify: *alert.RecoverNotify,
+			IsRecovered:   alert.IsRecovered,
+		}
+		ok := mute.IsMuted(mp)
+		if ok {
+			return
+		}
+
+		n := templates.NewTemplate(ec.ctx, alert, noticeData)
+		err := sender.Sender(ec.ctx, sender.SendParmas{
+			TenantId:    alert.TenantId,
+			RuleName:    alert.RuleName,
+			Severity:    alert.Severity,
+			NoticeType:  noticeData.NoticeType,
+			NoticeId:    noticeId,
+			NoticeName:  noticeData.Name,
+			IsRecovered: alert.IsRecovered,
+			Hook:        noticeData.Hook,
+			Email:       noticeData.Email,
+			Content:     n.CardContentMsg,
+			Event:       nil,
+		})
 		if err != nil {
-			global.Logger.Sugar().Errorf(err.Error())
+			logc.Errorf(ec.ctx.Ctx, err.Error())
 			return
 		}
 	}

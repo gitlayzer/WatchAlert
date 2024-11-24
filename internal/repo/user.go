@@ -1,13 +1,14 @@
 package repo
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/zeromicro/go-zero/core/logc"
 	"gorm.io/gorm"
-	"watchAlert/internal/global"
 	"watchAlert/internal/models"
 	"watchAlert/pkg/client"
-	"watchAlert/pkg/utils/cmd"
+	"watchAlert/pkg/tools"
 )
 
 type (
@@ -161,12 +162,12 @@ func (ur UserRepo) ChangeCache(userId string) {
 	var cacheUser models.Member
 	result, err := client.Redis.Get("uid-" + userId).Result()
 	if err != nil {
-		global.Logger.Sugar().Error(err)
+		logc.Error(context.Background(), err)
 	}
 	_ = json.Unmarshal([]byte(result), &cacheUser)
 
 	duration, _ := client.Redis.TTL("uid-" + userId).Result()
-	client.Redis.Set("uid-"+userId, cmd.JsonMarshal(dbUser), duration)
+	client.Redis.Set("uid-"+userId, tools.JsonMarshal(dbUser), duration)
 }
 
 func (ur UserRepo) ChangePass(r models.Member) error {

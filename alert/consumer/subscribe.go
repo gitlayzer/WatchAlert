@@ -3,11 +3,11 @@ package consumer
 import (
 	"fmt"
 	"strings"
-	"watchAlert/alert/sender"
 	"watchAlert/internal/models"
 	"watchAlert/pkg/ctx"
-	"watchAlert/pkg/utils/cmd"
-	"watchAlert/pkg/utils/templates"
+	"watchAlert/pkg/sender"
+	"watchAlert/pkg/templates"
+	"watchAlert/pkg/tools"
 )
 
 type toUser struct {
@@ -40,7 +40,7 @@ func processSubscribe(ctx *ctx.Context, alert models.AlertCurEvent, notice model
 		if foundSeverity {
 			if len(s.SFilter) > 0 {
 				for _, f := range s.SFilter {
-					if strings.Contains(cmd.JsonMarshal(alert.Metric), f) || strings.Contains(alert.Annotations, f) {
+					if strings.Contains(tools.JsonMarshal(alert.Metric), f) || strings.Contains(alert.Annotations, f) {
 						foundFilter = true
 						break
 					}
@@ -64,7 +64,7 @@ func processSubscribe(ctx *ctx.Context, alert models.AlertCurEvent, notice model
 			notice.NoticeTmplId = u.NoticeTemplateId
 			emailTemp := templates.NewTemplate(ctx, alert, notice)
 
-			err = sender.SendToEmail(alert, u.NoticeSubject, []string{u.Email}, nil, emailTemp.CardContentMsg)
+			err = sender.SendToEmail(alert.IsRecovered, u.NoticeSubject, []string{u.Email}, nil, emailTemp.CardContentMsg)
 			if err != nil {
 				return fmt.Errorf("邮件发送失败, err: %s", err.Error())
 			}

@@ -4,12 +4,12 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"github.com/zeromicro/go-zero/core/logc"
 	"time"
 	"watchAlert/internal/global"
 	"watchAlert/internal/models"
 	"watchAlert/pkg/ctx"
-	"watchAlert/pkg/utils/cmd"
-	jwtUtils "watchAlert/pkg/utils/jwt"
+	"watchAlert/pkg/tools"
 )
 
 type userService struct {
@@ -80,11 +80,11 @@ func (us userService) Login(req interface{}) (interface{}, interface{}) {
 		if global.Config.Ldap.Enabled {
 			err := LdapService.Login(r.UserName, r.Password)
 			if err != nil {
-				global.Logger.Sugar().Warnf("LDAP 用户登陆失败, err: %s", err.Error())
+				logc.Error(us.ctx.Ctx, fmt.Sprintf("LDAP 用户登陆失败, err: %s", err.Error()))
 				return nil, fmt.Errorf("LDAP 用户登陆失败, err: %s", err.Error())
 			}
 		} else {
-			global.Logger.Sugar().Warnf("请先开启 LDAP 功能!")
+			logc.Error(us.ctx.Ctx, "请先开启 LDAP 功能!")
 			return nil, fmt.Errorf("请先开启 LDAP 功能!")
 		}
 	default:
@@ -95,13 +95,13 @@ func (us userService) Login(req interface{}) (interface{}, interface{}) {
 
 	r.UserId = data.UserId
 	r.Password = hashPassword
-	tokenData, err := jwtUtils.GenerateToken(*r)
+	tokenData, err := tools.GenerateToken(r.UserId, r.UserName, r.Password)
 	if err != nil {
 		return nil, err
 	}
 
 	duration := time.Duration(global.Config.Jwt.Expire) * time.Second
-	us.ctx.Redis.Redis().Set("uid-"+data.UserId, cmd.JsonMarshal(r), duration)
+	us.ctx.Redis.Redis().Set("uid-"+data.UserId, tools.JsonMarshal(r), duration)
 
 	return tokenData, nil
 }
@@ -119,7 +119,7 @@ func (us userService) Register(req interface{}) (interface{}, interface{}) {
 	hashPassword := hex.EncodeToString(arr[:])
 	// 在初始化admin用户时会固定一个userid，所以这里需要做一下判断；
 	if r.UserId == "" {
-		r.UserId = cmd.RandUid()
+		r.UserId = tools.RandUid()
 	}
 
 	r.Password = hashPassword

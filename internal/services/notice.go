@@ -2,11 +2,11 @@ package services
 
 import (
 	"fmt"
+	"github.com/zeromicro/go-zero/core/logc"
 	"time"
-	"watchAlert/internal/global"
 	"watchAlert/internal/models"
 	"watchAlert/pkg/ctx"
-	"watchAlert/pkg/utils/cmd"
+	"watchAlert/pkg/tools"
 )
 
 type noticeService struct {
@@ -47,7 +47,7 @@ func (n noticeService) Create(req interface{}) (interface{}, interface{}) {
 		return models.AlertNotice{}, fmt.Errorf("创建失败, 配额不足")
 	}
 
-	r.Uuid = "n-" + cmd.RandId()
+	r.Uuid = "n-" + tools.RandId()
 
 	err := n.ctx.DB.Notice().Create(*r)
 	if err != nil {
@@ -146,7 +146,7 @@ func (n noticeService) GetRecordMetric(req interface{}) (interface{}, interface{
 				Severity: s,
 			})
 			if err != nil {
-				global.Logger.Sugar().Error(err.Error())
+				logc.Error(n.ctx.Ctx, err.Error())
 			}
 			switch s {
 			case "P0":

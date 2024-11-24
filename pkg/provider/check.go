@@ -2,15 +2,23 @@ package provider
 
 import (
 	"context"
-	"watchAlert/internal/global"
+	"fmt"
+	"github.com/zeromicro/go-zero/core/logc"
 	"watchAlert/internal/models"
+	"watchAlert/pkg/ctx"
 )
 
-func CheckDatasourceHealth(datasource models.AlertDataSource) bool {
+func CheckDatasourceHealth(ctx *ctx.Context, datasourceId string) bool {
 	var (
 		err   error
 		check bool
 	)
+
+	datasource, err := getDatasourceInfo(ctx, datasourceId)
+	if err != nil {
+		logc.Errorf(context.Background(), err.Error())
+		return false
+	}
 
 	switch datasource.Type {
 	case "Prometheus":
@@ -55,9 +63,15 @@ func CheckDatasourceHealth(datasource models.AlertDataSource) bool {
 
 	// 检查数据源健康状况并返回结果
 	if err != nil || !check {
-		global.Logger.Sugar().Errorf("数据源不健康, Id: %s, Name: %s, Type: %s", datasource.Id, datasource.Name, datasource.Type)
+		logc.Errorf(context.Background(), fmt.Sprintf("数据源不健康, Id: %s, Name: %s, Type: %s", datasource.Id, datasource.Name, datasource.Type))
 		return false
 	}
 
 	return true
+}
+
+// 获取数据源信息
+func getDatasourceInfo(ctx *ctx.Context, datasourceId string) (models.AlertDataSource, error) {
+	r := models.DatasourceQuery{Id: datasourceId}
+	return ctx.DB.Datasource().Get(r)
 }
