@@ -5,20 +5,13 @@ import (
 	"fmt"
 	"github.com/zeromicro/go-zero/core/logc"
 	"watchAlert/internal/models"
-	"watchAlert/pkg/ctx"
 )
 
-func CheckDatasourceHealth(ctx *ctx.Context, datasourceId string) bool {
+func CheckDatasourceHealth(datasource models.AlertDataSource) bool {
 	var (
 		err   error
 		check bool
 	)
-
-	datasource, err := getDatasourceInfo(ctx, datasourceId)
-	if err != nil {
-		logc.Errorf(context.Background(), err.Error())
-		return false
-	}
 
 	switch datasource.Type {
 	case "Prometheus":
@@ -32,7 +25,7 @@ func CheckDatasourceHealth(ctx *ctx.Context, datasourceId string) bool {
 			check, err = vmClient.Check()
 		}
 	case "Kubernetes":
-		cli, err := NewKubernetesClient(context.Background(), datasource.KubeConfig)
+		cli, err := NewKubernetesClient(context.Background(), datasource.KubeConfig, datasource.Labels)
 		if err == nil {
 			_, err = cli.GetWarningEvent("", 1)
 			check = (err == nil)
@@ -68,10 +61,4 @@ func CheckDatasourceHealth(ctx *ctx.Context, datasourceId string) bool {
 	}
 
 	return true
-}
-
-// 获取数据源信息
-func getDatasourceInfo(ctx *ctx.Context, datasourceId string) (models.AlertDataSource, error) {
-	r := models.DatasourceQuery{Id: datasourceId}
-	return ctx.DB.Datasource().Get(r)
 }

@@ -1,7 +1,6 @@
 package services
 
 import (
-	"errors"
 	"fmt"
 	"watchAlert/internal/models"
 	"watchAlert/pkg/ctx"
@@ -32,10 +31,6 @@ func newInterDatasourceService(ctx *ctx.Context) InterDatasourceService {
 
 func (ds datasourceService) Create(req interface{}) (interface{}, interface{}) {
 	dataSource := req.(*models.AlertDataSource)
-	health := provider.CheckDatasourceHealth(ds.ctx, dataSource.Id)
-	if !health {
-		return nil, errors.New("数据源目标不可达!")
-	}
 
 	id := "ds-" + tools.RandId()
 	data := dataSource
@@ -56,10 +51,6 @@ func (ds datasourceService) Create(req interface{}) (interface{}, interface{}) {
 
 func (ds datasourceService) Update(req interface{}) (interface{}, interface{}) {
 	dataSource := req.(*models.AlertDataSource)
-	health := provider.CheckDatasourceHealth(ds.ctx, dataSource.Id)
-	if !health {
-		return nil, errors.New("数据源目标不可达!")
-	}
 
 	err := ds.ctx.DB.Datasource().Update(*dataSource)
 	if err != nil {
@@ -138,9 +129,9 @@ func (ds datasourceService) WithAddClientToProviderPools(datasource models.Alert
 	case provider.JaegerDsProviderName:
 		cli, err = provider.NewJaegerClient(datasource)
 	case "Kubernetes":
-		cli, err = provider.NewKubernetesClient(ds.ctx.Ctx, datasource.KubeConfig)
+		cli, err = provider.NewKubernetesClient(ds.ctx.Ctx, datasource.KubeConfig, datasource.Labels)
 	case "CloudWatch":
-		cli, err = provider.NewAWSCredentialCfg(datasource.AWSCloudWatch.Region, datasource.AWSCloudWatch.AccessKey, datasource.AWSCloudWatch.SecretKey)
+		cli, err = provider.NewAWSCredentialCfg(datasource.AWSCloudWatch.Region, datasource.AWSCloudWatch.AccessKey, datasource.AWSCloudWatch.SecretKey, datasource.Labels)
 	}
 
 	if err != nil {
